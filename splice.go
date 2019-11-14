@@ -53,15 +53,12 @@ func GifToImg(g *gif.GIF, t *Target) *gif.GIF {
 		currFrame := *rgbFrame
 		currImg := currFrame.SubImage(currFrame.Bounds())
 
-		skib := &Source{Img: &currImg}
+		currSrc := &Source{Img: &currImg}
+		newImg := Imgs(currSrc, t)
 
-		newImg := Imgs(skib, t)
-
+		// if target is a large image this will be a bottleneck
 		newFrame := image.NewPaletted(newImg.Bounds(), palette.Plan9)
 		draw.FloydSteinberg.Draw(newFrame, newFrame.Bounds(), newImg, image.ZP)
-
-		// try to figure out why drawing image.Paletted takes so long
-		// draw.Draw(newFrame, newFrame.Bounds(), newImg, image.ZP, draw.Src)
 
 		newGif.Image = append(newGif.Image, newFrame)
 	}
