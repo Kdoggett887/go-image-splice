@@ -2,7 +2,9 @@ package splice
 
 import (
 	"image"
+	"image/color/palette"
 	"image/draw"
+	"image/gif"
 
 	"github.com/nfnt/resize"
 )
@@ -13,13 +15,13 @@ type Source struct {
 	Img *image.Image
 }
 
-func SpliceImgs(s *Source, t *Target) image.Image {
+// Imgs takes a source and target and draws the source onto the target
+// given the bounds in target
+func Imgs(s *Source, t *Target) image.Image {
 	// first find the offset we will be using
 	// just top left corner of bounds
 	pt := t.Bounds[0]
 	offset := image.Pt(pt[0], pt[1])
-	println(offset.X)
-
 	s.ResizeImg(t.Bounds)
 
 	targImg := *t.Img
@@ -31,6 +33,39 @@ func SpliceImgs(s *Source, t *Target) image.Image {
 	draw.Draw(newImg, sourceImg.Bounds().Add(offset), sourceImg, image.ZP, draw.Over)
 
 	return newImg
+}
+
+// GifToImg takes a source gif and draws each frame onto the target
+// then returns the new gif
+// Walks through each frame of g and splices that ontop of
+// the target. Replaces curr frame with the spliced version
+func GifToImg(g *gif.GIF, t *Target) *gif.GIF {
+	// gif frames are like a book, you have to paint over the last one
+	// so rgbFrame needs to be updated everytime and passed back in
+	newGif := &gif.GIF{Delay: g.Delay}
+	rgbFrame := image.NewRGBA(g.Image[0].Bounds())
+	draw.Draw(rgbFrame, rgbFrame.Bounds(), g.Image[0], image.ZP, draw.Src)
+
+	for _, gifFrame := range g.Image {
+		// update rgbFrame, then assign to currFrame which is appended
+		// to images
+		draw.Draw(rgbFrame, rgbFrame.Bounds(), gifFrame, image.ZP, draw.Over)
+		currFrame := *rgbFrame
+		currImg := currFrame.SubImage(currFrame.Bounds())
+
+		skib := &Source{Img: &currImg}
+
+		newImg := Imgs(skib, t)
+
+		newFrame := image.NewPaletted(newImg.Bounds(), palette.Plan9)
+		draw.FloydSteinberg.Draw(newFrame, newFrame.Bounds(), newImg, image.ZP)
+
+		// try to figure out why drawing image.Paletted takes so long
+		// draw.Draw(newFrame, newFrame.Bounds(), newImg, image.ZP, draw.Src)
+
+		newGif.Image = append(newGif.Image, newFrame)
+	}
+	return newGif
 }
 
 // ResizeImg resizes the source image to fit the
