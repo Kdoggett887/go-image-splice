@@ -37,10 +37,10 @@ func permutations(bounds *[4][2]int) [][4][2]int {
 
 func TestSortBounds(t *testing.T) {
 	points := &[4][2]int{
-		{0, 1},
-		{1, 1},
 		{0, 0},
 		{1, 0},
+		{0, 1},
+		{1, 1},
 	}
 
 	perms := permutations(points)

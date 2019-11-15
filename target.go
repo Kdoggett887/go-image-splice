@@ -26,6 +26,7 @@ func NewTarget(img *image.Image, bounds *[4][2]int) *Target {
 // and creating axes and putting each point in quadrants.
 // Note this will be invalid in the case that the bottom right
 // point is higher than the top left point.
+// In images 0,0 is top left corner and (h,w) is bottom right
 func (t *Target) SortBounds() {
 	var xAvg float64
 	var yAvg float64
@@ -44,18 +45,18 @@ func (t *Target) SortBounds() {
 		y := float64(point[1])
 
 		if y > yAvg {
-			// either 0 or 1
-			if x > xAvg {
-				newBounds[1] = point
-			} else {
-				newBounds[0] = point
-			}
-		} else {
 			// either 2 or 3
 			if x > xAvg {
 				newBounds[3] = point
 			} else {
 				newBounds[2] = point
+			}
+		} else {
+			// either 0 or 1
+			if x > xAvg {
+				newBounds[1] = point
+			} else {
+				newBounds[0] = point
 			}
 		}
 	}
