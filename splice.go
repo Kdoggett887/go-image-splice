@@ -1,12 +1,14 @@
 package splice
 
 import (
+	"fmt"
 	"image"
 	"image/color/palette"
 	"image/draw"
 	"image/gif"
 
 	"github.com/nfnt/resize"
+	"gocv.io/x/gocv"
 )
 
 // Source is the source image that will be spliced onto
@@ -18,19 +20,16 @@ type Source struct {
 // Imgs takes a source and target and draws the source onto the target
 // given the bounds in target
 func Imgs(s *Source, t *Target) image.Image {
-	// first find the offset we will be using
-	// just top left corner of bounds
-	pt := t.Bounds[0]
-	offset := image.Pt(pt[0], pt[1])
-	s.ResizeImg(t.Bounds)
 
 	targImg := *t.Img
-	sourceImg := *s.Img
 	b := targImg.Bounds()
-	newImg := image.NewRGBA(b)
+	s.ResizeImg(t.Bounds)
+	s.TransformPerspective(t.Bounds, b)
 
+	sourceImg := *s.Img
+	newImg := image.NewRGBA(b)
 	draw.Draw(newImg, b, targImg, image.ZP, draw.Src)
-	draw.Draw(newImg, sourceImg.Bounds().Add(offset), sourceImg, image.ZP, draw.Over)
+	draw.Draw(newImg, sourceImg.Bounds(), sourceImg, image.ZP, draw.Over)
 
 	return newImg
 }
@@ -68,6 +67,67 @@ func GifToImg(g *gif.GIF, t *Target) *gif.GIF {
 // ResizeImg resizes the source image to fit the
 // bounds on target
 func (s *Source) ResizeImg(bounds *[4][2]int) {
+	edges := boundsMinMax(bounds)
+	minX, maxX, minY, maxY := edges[0], edges[1], edges[2], edges[3]
+
+	height := uint(maxY - minY)
+	width := uint(maxX - minX)
+
+	newImg := resize.Resize(width, height, *s.Img, resize.Lanczos3)
+	s.Img = &newImg
+}
+
+// TransformPerspective performs a perspective transformation
+// on a source image based on the bounds passed in
+// our source image will be a rectangle if this is called after
+// ResizeImg, so this will warp the perspective to the generic
+// quadrilateral bounds
+func (s *Source) TransformPerspective(bounds *[4][2]int, targetRect image.Rectangle) {
+	orig, err := gocv.ImageToMatRGBA(*s.Img)
+	if err != nil {
+		fmt.Println("error converting image to matrix", err)
+		return
+	}
+
+	img := *s.Img
+	minX, minY := 0, 0
+	maxX := img.Bounds().Dx()
+	maxY := img.Bounds().Dy()
+
+	currPts := []image.Point{
+		image.Point{minX, minY},
+		image.Point{maxX, minY},
+		image.Point{minX, maxY},
+		image.Point{maxX, maxY},
+	}
+
+	newPts := make([]image.Point, 0, 4)
+	for _, pt := range bounds {
+		newPts = append(newPts, image.Point{pt[0], pt[1]})
+	}
+
+	transform := gocv.GetPerspectiveTransform(currPts, newPts)
+	perspective := gocv.NewMat()
+
+	// size needs to be the size of the target image
+	sz := image.Point{targetRect.Dx(), targetRect.Dy()}
+	gocv.WarpPerspective(orig, &perspective, transform, sz)
+
+	newImg, err := perspective.ToImage()
+	if err != nil {
+		fmt.Println("error converting matrix to image", err)
+		return
+	}
+
+	s.Img = &newImg
+}
+
+// boundsMinMax finds the minX, maxX, minY, maxY
+// of a set of bounds and returns them in an array in that
+// order
+func boundsMinMax(bounds *[4][2]int) [4]int {
+	var edges [4]int
+
 	var minY int
 	var maxY int
 	var minX int
@@ -96,9 +156,9 @@ func (s *Source) ResizeImg(bounds *[4][2]int) {
 		}
 	}
 
-	height := uint(maxY - minY)
-	width := uint(maxX - minX)
-
-	newImg := resize.Resize(width, height, *s.Img, resize.Lanczos3)
-	s.Img = &newImg
+	edges[0] = minX
+	edges[1] = maxX
+	edges[2] = minY
+	edges[3] = maxY
+	return edges
 }

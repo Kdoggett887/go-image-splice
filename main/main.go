@@ -38,13 +38,20 @@ func main() {
 	}
 	defer target.Close()
 
+	// bounds := [4][2]int{
+	// 	{134, 178},
+	// 	{512, 166},
+	// 	{148, 440},
+	// 	{530, 381},
+	// }
 	bounds := [4][2]int{
-		{0, 800},
-		{0, 0},
-		{1200, 800},
-		{1200, 0},
+		{334, 378},
+		{712, 366},
+		{348, 640},
+		{730, 581},
 	}
 	t := splice.NewTarget(&targetImg, &bounds)
+	t.SortBounds()
 	s := &splice.Source{Img: &sourceImg}
 
 	newImg := splice.Imgs(s, t)
