@@ -1,14 +1,17 @@
 package splice
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/color/palette"
 	"image/draw"
 	"image/gif"
+	"image/png"
+
+	"gopkg.in/gographics/imagick.v2/imagick"
 
 	"github.com/nfnt/resize"
-	"gocv.io/x/gocv"
 )
 
 // Source is the source image that will be spliced onto
@@ -20,16 +23,27 @@ type Source struct {
 // Imgs takes a source and target and draws the source onto the target
 // given the bounds in target
 func Imgs(s *Source, t *Target) image.Image {
-
 	targImg := *t.Img
 	b := targImg.Bounds()
-	s.ResizeImg(t.Bounds)
+
+	// have to make source image as big as target
+	// so distortion doesn't cut it off
+	// TODO: figure out a way to keep aspect ratio while
+	// resizing
+	edges := &[4][2]int{
+		{b.Min.X, b.Min.Y},
+		{b.Max.X, b.Min.Y},
+		{b.Min.X, b.Max.Y},
+		{b.Max.X, b.Max.Y},
+	}
+	s.ResizeImg(edges) // to full size
 	s.TransformPerspective(t.Bounds, b)
 
 	sourceImg := *s.Img
 	newImg := image.NewRGBA(b)
+
 	draw.Draw(newImg, b, targImg, image.ZP, draw.Src)
-	draw.Draw(newImg, sourceImg.Bounds(), sourceImg, image.ZP, draw.Over)
+	draw.Draw(newImg, b, sourceImg, image.ZP, draw.Over)
 
 	return newImg
 }
@@ -83,13 +97,30 @@ func (s *Source) ResizeImg(bounds *[4][2]int) {
 // ResizeImg, so this will warp the perspective to the generic
 // quadrilateral bounds
 func (s *Source) TransformPerspective(bounds *[4][2]int, targetRect image.Rectangle) {
-	orig, err := gocv.ImageToMatRGBA(*s.Img)
+	img := *s.Img
+
+	imagick.Initialize()
+	defer imagick.Terminate()
+
+	mw := imagick.NewMagickWand()
+	defer mw.Destroy()
+
+	buf := new(bytes.Buffer)
+	err := png.Encode(buf, img)
 	if err != nil {
-		fmt.Println("error converting image to matrix", err)
+		fmt.Println(err)
 		return
 	}
 
-	img := *s.Img
+	err = mw.ReadImageBlob(buf.Bytes())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	mw.SetImageVirtualPixelMethod(imagick.VIRTUAL_PIXEL_TRANSPARENT)
+	mw.SetImageAlphaChannel(imagick.ALPHA_CHANNEL_SET)
+
 	minX, minY := 0, 0
 	maxX := img.Bounds().Dx()
 	maxY := img.Bounds().Dy()
@@ -106,16 +137,30 @@ func (s *Source) TransformPerspective(bounds *[4][2]int, targetRect image.Rectan
 		newPts = append(newPts, image.Point{pt[0], pt[1]})
 	}
 
-	transform := gocv.GetPerspectiveTransform(currPts, newPts)
-	perspective := gocv.NewMat()
+	// the input for DistortionImage is a slice of length
+	// 16. Where points are grouped as origX1, origY1, newX1, newY1, ...
+	pts := make([]float64, 16)
+	for i, j := 0, 0; i < len(currPts); i, j = i+1, j+4 {
+		origX := float64(currPts[i].X)
+		origY := float64(currPts[i].Y)
+		newX := float64(newPts[i].X)
+		newY := float64(newPts[i].Y)
 
-	// size needs to be the size of the target image
-	sz := image.Point{targetRect.Dx(), targetRect.Dy()}
-	gocv.WarpPerspective(orig, &perspective, transform, sz)
+		pts[j] = origX
+		pts[j+1] = origY
+		pts[j+2] = newX
+		pts[j+3] = newY
+	}
 
-	newImg, err := perspective.ToImage()
+	err = mw.DistortImage(imagick.DISTORTION_BILINEAR_FORWARD, pts, true)
 	if err != nil {
-		fmt.Println("error converting matrix to image", err)
+		fmt.Println(err)
+		return
+	}
+
+	newImg, _, err := image.Decode(bytes.NewReader(mw.GetImageBlob()))
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 

@@ -4,6 +4,7 @@ import (
 	splice "go-image-splice"
 	"image/gif"
 	"image/jpeg"
+	"image/png"
 	"os"
 )
 
@@ -32,7 +33,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	targetImg, err := jpeg.Decode(target)
+	targetImg, err := png.Decode(target)
 	if err != nil {
 		println("could not decode target img")
 	}
@@ -44,12 +45,14 @@ func main() {
 	// 	{148, 440},
 	// 	{530, 381},
 	// }
+
 	bounds := [4][2]int{
-		{334, 378},
-		{712, 366},
-		{348, 640},
-		{730, 581},
+		{438, 174},
+		{863, 311},
+		{448, 745},
+		{845, 646},
 	}
+
 	t := splice.NewTarget(&targetImg, &bounds)
 	t.SortBounds()
 	s := &splice.Source{Img: &sourceImg}
