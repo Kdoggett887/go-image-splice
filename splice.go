@@ -8,8 +8,9 @@ import (
 	"image/draw"
 	"image/gif"
 	"image/png"
-
-	"gopkg.in/gographics/imagick.v2/imagick"
+	"os/exec"
+	"strconv"
+	"strings"
 
 	"github.com/nfnt/resize"
 )
@@ -98,32 +99,71 @@ func (s *Source) ResizeImg(bounds *[4][2]int) {
 // quadrilateral bounds
 func (s *Source) TransformPerspective(bounds *[4][2]int, targetRect image.Rectangle) {
 	img := *s.Img
+	ptStr := boundaryString(s.Img, bounds)
 
-	imagick.Initialize()
-	defer imagick.Terminate()
+	cmd := exec.Command("convert", "-", "-virtual-pixel", "transparent",
+		"-alpha", "set", "-distort", "BilinearForward", ptStr, "-")
 
-	mw := imagick.NewMagickWand()
-	defer mw.Destroy()
-
-	buf := new(bytes.Buffer)
-	err := png.Encode(buf, img)
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("err on stdin", err.Error())
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		fmt.Println("stdout err", err.Error())
+	}
+
+	// read image in once we exec
+	go func() {
+		defer stdin.Close()
+
+		inBuf := new(bytes.Buffer)
+		err = png.Encode(inBuf, img)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		_, err = stdin.Write(inBuf.Bytes())
+		if err != nil {
+			fmt.Println("error writing buf to stdin", err.Error())
+			return
+		}
+	}()
+
+	err = cmd.Start()
+	if err != nil {
+		fmt.Println("error while running", err.Error())
 		return
 	}
 
-	err = mw.ReadImageBlob(buf.Bytes())
+	outBuf := new(bytes.Buffer)
+	_, err = outBuf.ReadFrom(stdout)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("error reading stdout", err.Error())
 		return
 	}
 
-	mw.SetImageVirtualPixelMethod(imagick.VIRTUAL_PIXEL_TRANSPARENT)
-	mw.SetImageAlphaChannel(imagick.ALPHA_CHANNEL_SET)
+	err = cmd.Wait()
+	if err != nil {
+		fmt.Println("err at wait", err.Error())
+		return
+	}
 
+	newImg, _, err := image.Decode(bytes.NewReader(outBuf.Bytes()))
+	if err != nil {
+		fmt.Println("error while decoding image", err.Error())
+		return
+	}
+
+	s.Img = &newImg
+}
+
+func boundaryString(img *image.Image, bounds *[4][2]int) string {
 	minX, minY := 0, 0
-	maxX := img.Bounds().Dx()
-	maxY := img.Bounds().Dy()
+	maxX := (*img).Bounds().Dx()
+	maxY := (*img).Bounds().Dy()
 
 	currPts := []image.Point{
 		image.Point{minX, minY},
@@ -132,19 +172,14 @@ func (s *Source) TransformPerspective(bounds *[4][2]int, targetRect image.Rectan
 		image.Point{maxX, maxY},
 	}
 
-	newPts := make([]image.Point, 0, 4)
-	for _, pt := range bounds {
-		newPts = append(newPts, image.Point{pt[0], pt[1]})
-	}
-
 	// the input for DistortionImage is a slice of length
 	// 16. Where points are grouped as origX1, origY1, newX1, newY1, ...
-	pts := make([]float64, 16)
+	pts := make([]string, 16)
 	for i, j := 0, 0; i < len(currPts); i, j = i+1, j+4 {
-		origX := float64(currPts[i].X)
-		origY := float64(currPts[i].Y)
-		newX := float64(newPts[i].X)
-		newY := float64(newPts[i].Y)
+		origX := strconv.Itoa(currPts[i].X)
+		origY := strconv.Itoa(currPts[i].Y)
+		newX := strconv.Itoa((*bounds)[i][0])
+		newY := strconv.Itoa((*bounds)[i][1])
 
 		pts[j] = origX
 		pts[j+1] = origY
@@ -152,19 +187,8 @@ func (s *Source) TransformPerspective(bounds *[4][2]int, targetRect image.Rectan
 		pts[j+3] = newY
 	}
 
-	err = mw.DistortImage(imagick.DISTORTION_BILINEAR_FORWARD, pts, true)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	newImg, _, err := image.Decode(bytes.NewReader(mw.GetImageBlob()))
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	s.Img = &newImg
+	ptStr := strings.Join(pts, ",")
+	return ptStr
 }
 
 // boundsMinMax finds the minX, maxX, minY, maxY
