@@ -57,25 +57,35 @@ func GifToImg(g *gif.GIF, t *Target) *gif.GIF {
 	t.AddTransparency()
 	fmt.Println(g.Delay, g.Disposal, g.BackgroundIndex)
 	newGif := &gif.GIF{
+		Image:           g.Image,
 		Delay:           g.Delay,
 		Disposal:        g.Disposal,
 		BackgroundIndex: g.BackgroundIndex,
 	}
 
-	for _, gifFrame := range g.Image {
-		currFrame := image.NewRGBA(gifFrame.Bounds())
-		draw.Draw(currFrame, currFrame.Bounds(), gifFrame, image.ZP, draw.Src)
+	proc := make(chan bool)
+	for i, gifFrame := range g.Image {
+		go func(i int, gifFrame *image.Paletted) {
+			currFrame := image.NewRGBA(gifFrame.Bounds())
+			draw.Draw(currFrame, currFrame.Bounds(), gifFrame, image.ZP, draw.Src)
 
-		currImg := currFrame.SubImage(currFrame.Bounds())
-		currSrc := &Source{Img: &currImg}
-		newImg := Imgs(currSrc, t)
+			currImg := currFrame.SubImage(currFrame.Bounds())
+			currSrc := &Source{Img: &currImg}
+			newImg := Imgs(currSrc, t)
 
-		// if target is a large image this will be a bottleneck
-		newFrame := image.NewPaletted(newImg.Bounds(), gifFrame.Palette)
-		draw.FloydSteinberg.Draw(newFrame, newFrame.Bounds(), newImg, image.ZP)
+			// if target is a large image this will be a bottleneck
+			newFrame := image.NewPaletted(newImg.Bounds(), gifFrame.Palette)
+			draw.FloydSteinberg.Draw(newFrame, newFrame.Bounds(), newImg, image.ZP)
 
-		newGif.Image = append(newGif.Image, newFrame)
+			newGif.Image[i] = newFrame
+			proc <- true
+		}(i, gifFrame)
 	}
+
+	for i := 0; i < len(g.Image); i++ {
+		<-proc
+	}
+
 	return newGif
 }
 
