@@ -1,14 +1,24 @@
 package main
 
 import (
+	"fmt"
 	splice "go-image-splice"
+	"image"
+	"image/draw"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"os"
+	"runtime"
 )
 
+// NProcs is number of go processes
+const NProcs = 4
+
 func main() {
+
+	runtime.GOMAXPROCS(NProcs)
+
 	if len(os.Args) < 4 {
 		println("not enough args")
 		os.Exit(1)
@@ -22,7 +32,7 @@ func main() {
 
 	sourceImg, err := jpeg.Decode(source)
 	if err != nil {
-		println("could not decode source img")
+		println("could not decode source img", sourceImg)
 	}
 	defer source.Close()
 
@@ -46,27 +56,30 @@ func main() {
 	// 	{530, 381},
 	// }
 
+	// target setup
 	bounds := [4][2]int{
 		{438, 174},
 		{863, 311},
 		{448, 745},
 		{845, 646},
 	}
-
 	t := splice.NewTarget(&targetImg, &bounds)
 	t.SortBounds()
-	s := &splice.Source{Img: &sourceImg}
 
-	newImg := splice.Imgs(s, t)
+	// jpeg splice test
+	// s := &splice.Source{Img: &sourceImg}
 
-	output, err := os.Create("result.jpg")
-	if err != nil {
-		println("couldn't make file")
-	}
-	defer output.Close()
+	// newImg := splice.Imgs(s, t)
 
-	jpeg.Encode(output, newImg, &jpeg.Options{Quality: jpeg.DefaultQuality})
+	// output, err := os.Create("result.jpg")
+	// if err != nil {
+	// 	println("couldn't make file")
+	// }
+	// defer output.Close()
 
+	// jpeg.Encode(output, newImg, &jpeg.Options{Quality: jpeg.DefaultQuality})
+
+	// gif splice testing
 	gifPath := os.Args[3]
 	source2, err := os.Open(gifPath)
 	if err != nil {
@@ -90,6 +103,49 @@ func main() {
 
 	err = gif.EncodeAll(output2, newGif)
 	if err != nil {
-		println(err)
+		println(err.Error())
 	}
+
+	// Gif overlay testing
+	// println(time.Now().String())
+	// newGif = writeGif(sourceGif)
+	// println(time.Now().String())
+
+	// output3, err := os.Create("gif-copy.gif")
+	// if err != nil {
+	// 	println("couldn't make gif file")
+	// }
+	// defer output3.Close()
+
+	// err = gif.EncodeAll(output3, newGif)
+	// if err != nil {
+	// 	println(err.Error())
+	// }
+
+	// target transparency testing
+	// t.AddTransparency()
+	// output4, err := os.Create("tronk-trans.png")
+	// if err != nil {
+	// 	println("couldn't make png file")
+	// }
+	// defer output4.Close()
+
+	// err = png.Encode(output4, *t.Img)
+	// if err != nil {
+	// 	println(err.Error())
+	// }
+}
+
+func writeGif(g *gif.GIF) *gif.GIF {
+	fmt.Println(g.Delay, g.Disposal, g.BackgroundIndex)
+	firstFrame := g.Image[0]
+	for i := range g.Image {
+		// tmp image is used here to keep the same dimensions for each frame
+		tmp := image.NewNRGBA(firstFrame.Bounds())
+		dst := image.NewPaletted(tmp.Bounds(), g.Image[i].Palette)
+		draw.FloydSteinberg.Draw(dst, dst.Bounds(), g.Image[i], image.ZP)
+		g.Image[i] = dst
+	}
+
+	return g
 }

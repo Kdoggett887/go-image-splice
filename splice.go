@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"image"
-	"image/color/palette"
 	"image/draw"
 	"image/gif"
 	"image/png"
@@ -54,24 +53,25 @@ func Imgs(s *Source, t *Target) image.Image {
 // Walks through each frame of g and splices that ontop of
 // the target. Replaces curr frame with the spliced version
 func GifToImg(g *gif.GIF, t *Target) *gif.GIF {
-	// gif frames are like a book, you have to paint over the last one
-	// so rgbFrame needs to be updated everytime and passed back in
-	newGif := &gif.GIF{Delay: g.Delay}
-	rgbFrame := image.NewRGBA(g.Image[0].Bounds())
-	draw.Draw(rgbFrame, rgbFrame.Bounds(), g.Image[0], image.ZP, draw.Src)
+	// add transparency to target so we can safely write over it
+	t.AddTransparency()
+	fmt.Println(g.Delay, g.Disposal, g.BackgroundIndex)
+	newGif := &gif.GIF{
+		Delay:           g.Delay,
+		Disposal:        g.Disposal,
+		BackgroundIndex: g.BackgroundIndex,
+	}
 
 	for _, gifFrame := range g.Image {
-		// update rgbFrame, then assign to currFrame which is appended
-		// to images
-		draw.Draw(rgbFrame, rgbFrame.Bounds(), gifFrame, image.ZP, draw.Over)
-		currFrame := *rgbFrame
-		currImg := currFrame.SubImage(currFrame.Bounds())
+		currFrame := image.NewRGBA(gifFrame.Bounds())
+		draw.Draw(currFrame, currFrame.Bounds(), gifFrame, image.ZP, draw.Src)
 
+		currImg := currFrame.SubImage(currFrame.Bounds())
 		currSrc := &Source{Img: &currImg}
 		newImg := Imgs(currSrc, t)
 
 		// if target is a large image this will be a bottleneck
-		newFrame := image.NewPaletted(newImg.Bounds(), palette.Plan9)
+		newFrame := image.NewPaletted(newImg.Bounds(), gifFrame.Palette)
 		draw.FloydSteinberg.Draw(newFrame, newFrame.Bounds(), newImg, image.ZP)
 
 		newGif.Image = append(newGif.Image, newFrame)
