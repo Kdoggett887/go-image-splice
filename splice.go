@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
+	"image/color/palette"
 	"image/draw"
 	"image/gif"
 	"image/png"
@@ -63,6 +65,11 @@ func GifToImg(g *gif.GIF, t *Target) *gif.GIF {
 		BackgroundIndex: g.BackgroundIndex,
 	}
 
+	// setup color palette
+	var gifPalette color.Palette
+	gifPalette = palette.WebSafe
+	gifPalette = append(gifPalette, image.Transparent)
+
 	proc := make(chan bool)
 	for i, gifFrame := range g.Image {
 		go func(i int, gifFrame *image.Paletted) {
@@ -74,7 +81,7 @@ func GifToImg(g *gif.GIF, t *Target) *gif.GIF {
 			newImg := Imgs(currSrc, t)
 
 			// if target is a large image this will be a bottleneck
-			newFrame := image.NewPaletted(newImg.Bounds(), gifFrame.Palette)
+			newFrame := image.NewPaletted(newImg.Bounds(), gifPalette)
 			draw.FloydSteinberg.Draw(newFrame, newFrame.Bounds(), newImg, image.ZP)
 
 			newGif.Image[i] = newFrame
