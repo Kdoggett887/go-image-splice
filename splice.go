@@ -9,10 +9,13 @@ import (
 	"image/draw"
 	"image/gif"
 	"image/png"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/fogleman/gg"
 	"github.com/nfnt/resize"
 )
 
@@ -83,7 +86,6 @@ func GifToImg(g *gif.GIF, t *Target) *gif.GIF {
 			// if target is a large image this will be a bottleneck
 			newFrame := image.NewPaletted(newImg.Bounds(), gifPalette)
 			draw.FloydSteinberg.Draw(newFrame, newFrame.Bounds(), newImg, image.ZP)
-
 			newGif.Image[i] = newFrame
 			proc <- true
 		}(i, gifFrame)
@@ -94,6 +96,45 @@ func GifToImg(g *gif.GIF, t *Target) *gif.GIF {
 	}
 
 	return newGif
+}
+
+// GifToFrames splices the gif onto the target and saves
+// the generated images to a timestamped folder that is a child of
+// the dir. Frames are named as frame-%04d.png (ex. frame-0001.png).
+// Returns path to pngdir or error.
+func GifToFrames(g *gif.GIF, t *Target, dir string) (string, error) {
+	timestamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
+	pngdir := dir + timestamp
+	err := os.MkdirAll(pngdir, os.ModePerm)
+	if err != nil {
+		fmt.Println("error creating dir", err.Error())
+	}
+
+	fmt.Println("frames to process:", len(g.Image))
+
+	firstFrame := g.Image[0]
+	currFrame := image.NewNRGBA64(firstFrame.Bounds())
+	draw.Draw(currFrame, currFrame.Bounds(), g.Image[0], image.ZP, draw.Src)
+
+	for i, gifImage := range g.Image {
+		fmt.Println("starting frame:", i)
+		draw.Draw(currFrame, currFrame.Bounds(), gifImage, image.ZP, draw.Over)
+		frame := *currFrame
+
+		currImg := currFrame.SubImage(frame.Bounds())
+		currSrc := &Source{Img: &currImg}
+		newImg := Imgs(currSrc, t)
+
+		ctx := gg.NewContextForImage(newImg)
+		err = ctx.SavePNG(fmt.Sprintf("%s%s%04d%s", pngdir, "/frame-", i, ".png"))
+
+		if err != nil {
+			fmt.Println("error saving png", err.Error())
+			return pngdir, err
+		}
+	}
+
+	return pngdir, nil
 }
 
 // ResizeImg resizes the source image to fit the

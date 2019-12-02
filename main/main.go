@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"os"
 	"runtime"
+	"time"
 )
 
 // NProcs is number of go processes
@@ -93,18 +94,28 @@ func main() {
 	}
 	defer source2.Close()
 
-	newGif := splice.GifToImg(sourceGif, t)
+	// fmt.Println("starting gif splice", time.Now())
+	// newGif := splice.GifToImg(sourceGif, t)
+	// fmt.Println("ending gif splice", time.Now())
 
-	output2, err := os.Create("gif-result.gif")
-	if err != nil {
-		println("couldn't make gif")
-	}
-	defer output2.Close()
+	// output2, err := os.Create("gif-result.gif")
+	// if err != nil {
+	// 	println("couldn't make gif")
+	// }
+	// defer output2.Close()
 
-	err = gif.EncodeAll(output2, newGif)
+	// err = gif.EncodeAll(output2, newGif)
+	// if err != nil {
+	// 	println(err.Error())
+	// }
+
+	fmt.Println("starting gif to frames", time.Now())
+	tmpdir, err := splice.GifToFrames(sourceGif, t, "tmp/")
 	if err != nil {
-		println(err.Error())
+		fmt.Println(err.Error())
 	}
+	fmt.Println(tmpdir)
+	fmt.Println("ending gif to frames", time.Now())
 
 	// Gif overlay testing
 	// println(time.Now().String())
