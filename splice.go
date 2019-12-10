@@ -137,6 +137,36 @@ func GifToFrames(g *gif.GIF, t *Target, dir string) (string, error) {
 	return pngdir, nil
 }
 
+// GifToPngSlice takes a gif and encodes it into a list of PNG buffers
+func GifToPngSlice(g *gif.GIF, t *Target) ([]*bytes.Buffer, error) {
+	fmt.Println("frames to process:", len(g.Image))
+	frames := make([]*bytes.Buffer, len(g.Image))
+
+	firstFrame := g.Image[0]
+	currFrame := image.NewNRGBA64(firstFrame.Bounds())
+	draw.Draw(currFrame, currFrame.Bounds(), g.Image[0], image.ZP, draw.Src)
+
+	for i, gifImage := range g.Image {
+		fmt.Println("starting frame:", i)
+		draw.Draw(currFrame, currFrame.Bounds(), gifImage, image.ZP, draw.Over)
+		frame := *currFrame
+
+		currImg := currFrame.SubImage(frame.Bounds())
+		currSrc := &Source{Img: &currImg}
+		newImg := Imgs(currSrc, t)
+
+		buf := new(bytes.Buffer)
+		err := png.Encode(buf, newImg)
+		if err != nil {
+			return nil, err
+		}
+
+		frames[i] = buf
+	}
+
+	return frames, nil
+}
+
 // ResizeImg resizes the source image to fit the
 // bounds on target
 func (s *Source) ResizeImg(bounds *[4][2]int) {
